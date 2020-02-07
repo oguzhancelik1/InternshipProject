@@ -1,2 +1,4 @@
 requests==2.22.0
 pycurl==7.43.0.5
+beautifulsoup4==4.8.2
+lxml==4.5.0

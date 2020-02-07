@@ -10,7 +10,16 @@ from urllib.parse import urlencode
 #FOR THREADING
 import threading
 
-url_to_work = 'https://jsonplaceholder.typicode.com/posts'
+#FOR ARGPARSE
+import argparse
+
+#FOR BEUTIFULSOUP4
+from bs4 import BeautifulSoup
+# this url is used to get the information within posts, or post information to posts 
+url_to_work   = 'https://jsonplaceholder.typicode.com/posts'
+# this url is used to scrape the content of the main page
+url_to_scrape = 'https://jsonplaceholder.typicode.com'
+
 
 proxies_dict = {
         'http': 'http://195.154.176.130:4030',
@@ -20,11 +29,14 @@ proxies_dict = {
 
 lock = threading.Lock()
 
-def get_with_proxy():
+proxy_selection=None
+
+
+def get_information(url):
 
     s = requests.Session()
     
-    response = s.get(url_to_work,proxies=proxies_dict)
+    response = s.get(url,proxies=None)
 
     return response
 
@@ -42,36 +54,244 @@ def reverse_prepare_data(rsp):
 
 
 
-def post_with_proxy(value):
+def post_information(value,proxy_selection,url):
+
+    
     s = requests.Session()
     
-    print((s.post(url_to_work,data=value,
-       headers={
-        "Content-type": "application/json; charset=UTF-8"
+    print((s.post(
+        url,
+        data=value,
+        headers={
+            "Content-type": "application/json; charset=UTF-8"
         },
-        proxies=None)).text)
+        proxies=proxy_selection)).text)
+def get_page_content():
+    s = requests.Session()
+    
+    response = s.get(url_to_scrape,proxies=None)
 
+    return response
+
+    
+def scrape_data(page):
+    page = page
+    soup = BeautifulSoup(page.content, 'lxml')
+
+    # get the div
+    match_of_divs_routes = soup.find('div', class_='container')
+    # get the table within div
+    match_of_tables_routes = match_of_divs_routes.find_all('table') # match_of_tables_routes is a list
+    # get the tr in the appropriate table(in this case the second one)
+    match_of_trs_routes = match_of_tables_routes[1].find_all('tr')
+    # create a list to hold the postable endpoints
+    endpoints_with_post_in_routes=[]
+
+    for each in match_of_trs_routes:
+            # get each td value within tr
+            match_of_tds_routes = each.find_all('td')
+            # check if the td has the 'POST' 
+            if match_of_tds_routes[0].text=='POST':
+              #print('this is a td with post in the routes')
+              endpoints_with_post_in_routes.append(match_of_tds_routes[1].text.strip())
+            #else:
+              #print('this is a td without post in the routes')  
+    
+
+    print('All postable endpoints are : ')
+    for each in endpoints_with_post_in_routes:
+        print(repr(each))
+
+    # get the match of the tables, find() will find the first occurence
+    # which in this case what is needed
+    match_of_tables_resources= soup.find('table',class_='resources')
+    # get the trs within the table
+    match_of_trs_resources = match_of_tables_resources.find_all('tr')
+    # create a list to hold the the all possible endpoints in resources
+    endpoints_in_resources = []
+
+    for each in match_of_trs_resources:
+        # get the match of tds for each tr 
+        match_of_tds_resources=each.find_all('td')
+        endpoints_in_resources.append(match_of_tds_resources[0].text.strip())
+
+    print('All endpoints in resources are :')
+    intersection_list = []
+
+    for each in endpoints_in_resources:
+        print(repr(each))
+    
+    for each in endpoints_with_post_in_routes:
+        checker=each
+        for val in endpoints_in_resources:
+            
+            if checker==val:
+                intersection_list.append(each)
+
+            else:
+                print('lol')
+
+    for each in intersection_list:
+        print(each)
+
+    return intersection_list
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+         '-s','--selection', 
+         help='Type 1 for proxies, type 2 for non proxies',
+         type = int
+         )
+    parser.add_argument(
+         '-t','--threading',
+         help ='Type 1 for threading, type 2 for non threading',
+         type=int )    
+    args = parser.parse_args()
+
+
+    info_to_scrape = get_page_content()
+
+    # get the endpoints that are postable
+    intersection_list_returned = scrape_data(info_to_scrape)
+
+    dict_holds_data_from_endpoints = {}
+
+    for each in intersection_list_returned:
+        url_to_get = url_to_scrape + each
+
+        response_after_get = get_information(url_to_get)
+        list_of_reversed_jsons = reverse_prepare_data(response_after_get)
+        dict_holds_data_from_endpoints[each] = list_of_reversed_jsons
+    #get information from /posts enpoint
+    
+  
+    #url_to_scrape is the default site
+    url_to_post   = url_to_scrape
+    
+    if (args.selection == 1):
+        proxy_selection= proxies_dict
+
+    
+    elif(args.selection == 2):
+        proxy_selection= None
+
+    if(args.threading == 1):
+
+        
+
+        for key in dict_holds_data_from_endpoints:
+
+            url_to_post = url_to_scrape + key
+            list_of_reversed_jsons = dict_holds_data_from_endpoints[key]
+        
+            threads = []
+             # create separate threads for all items and call post_information function
+            for val in list_of_reversed_jsons:
+                t= threading.Thread(target=post_information, args = (val,proxy_selection,url_to_post,))
+                t.start()
+                threads.append(t)
+                
+            for val in threads:
+                val.join()
+
+    elif(args.threading == 2):
+
+        for key in dict_holds_data_from_endpoints:
+            url_to_post = url_to_scrape + key
+            list_of_reversed_jsons = dict_holds_data_from_endpoints[key]
+            
+            for val in list_of_reversed_jsons:
+
+                post_information(val,proxy_selection,url_to_post)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    #***********************    ARGPARSE    **********************************
+       
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument(
+    #     '-s','--selection', 
+    #     help='Type 1 for proxies, type 2 for non proxies',
+    #     type = int
+    #     )
+    # parser.add_argument(
+    #     '-t','--threading',
+    #     help ='Type 1 for threading, type 2 for non threading',
+    #     type=int )    
+    # args = parser.parse_args()
+    
+   
+    # #it will get the posts using proxies
+    # response_after_get = get_information()
+
+    # #it will hold the json strings of each entry
+    # list_of_reversed_jsons = reverse_prepare_data(response_after_get)
+    
+    # if (args.selection == 1):
+    #     proxy_selection= proxies_dict
+
+    
+    # elif(args.selection == 2):
+    #     proxy_selection= None
+
+    # if(args.threading == 1):
+
+    #     threads = []
+
+    #     for val in list_of_reversed_jsons:
+    #         t= threading.Thread(target=post_information, args = (val,proxy_selection,))
+    #         t.start()
+    #         threads.append(t)
+            
+    #     for val in threads:
+    #         val.join()
+
+    # elif(args.threading == 2):
+
+    #     for val in list_of_reversed_jsons:
+
+    #         post_information(val,proxy_selection)
+
+
     #***********************    THREADING   **********************
 
-    response_after_get = get_with_proxy()
+    # response_after_get = get_information()
 
-    list_in_main = reverse_prepare_data(response_after_get)
+    # list_of_reversed_jsons = reverse_prepare_data(response_after_get)
 
-    threads=[]
+    # threads=[]
 
-    for val in list_in_main:
-        t= threading.Thread(target=post_with_proxy,args=(val,))
-        t.start()
-        threads.append(t)
+    # for val in list_of_reversed_jsons:
+    #     t= threading.Thread(target=post_information,args=(val,))
+    #     t.start()
+    #     threads.append(t)
       
-    #print(response.text)
+    # #print(response.text)
     
-    for val in threads:
-        val.join()
+    # for val in threads:
+    #     val.join()
     
-    print('ayaktayım')
+    # print('ayaktayım')
 
 
 
